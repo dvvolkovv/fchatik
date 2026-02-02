@@ -135,29 +135,29 @@ function updateAuthUI() {
 
 // Chat API Functions
 async function createChatAPI(title = "Новый чат") {
-    return await apiRequest('/chats', {
+    return await apiRequest('/chats/', {
         method: 'POST',
         body: JSON.stringify({ title }),
     });
 }
 
 async function getUserChats() {
-    return await apiRequest('/chats');
+    return await apiRequest('/chats/');
 }
 
 async function getChatWithMessages(chatId) {
-    return await apiRequest(`/chats/${chatId}`);
+    return await apiRequest(`/chats/${chatId}/`);
 }
 
 async function updateChatAPI(chatId, updates) {
-    return await apiRequest(`/chats/${chatId}`, {
+    return await apiRequest(`/chats/${chatId}/`, {
         method: 'PATCH',
         body: JSON.stringify(updates),
     });
 }
 
 async function deleteChatAPI(chatId) {
-    await apiRequest(`/chats/${chatId}`, {
+    await apiRequest(`/chats/${chatId}/`, {
         method: 'DELETE',
     });
 }
@@ -174,6 +174,88 @@ async function sendMessageAPI(chatId, content, model) {
     });
 }
 
+// Streaming message API using SSE (Server-Sent Events)
+function sendMessageStreamAPI(chatId, content, model, onChunk, onComplete, onError) {
+    const url = `${API_CONFIG.baseURL}/llm/chat/${chatId}/message/stream`;
+    
+    console.log('[STREAMING] Starting request:', {url, chatId, model});
+    
+    fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({
+            content: content,
+            model: model,
+            attachments: AppState.attachments || []
+        })
+    }).then(async response => {
+        console.log('[STREAMING] Response received:', {
+            status: response.status,
+            statusText: response.statusText,
+            headers: Object.fromEntries(response.headers.entries())
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('[STREAMING] Error response:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        
+        while (true) {
+            const {done, value} = await reader.read();
+            
+            console.log('[STREAMING] Chunk received:', {done, size: value?.length});
+            
+            if (done) {
+                console.log('[STREAMING] Stream completed');
+                break;
+            }
+            
+            buffer += decoder.decode(value, {stream: true});
+            console.log('[STREAMING] Buffer size:', buffer.length, 'Preview:', buffer.substring(0, 200));
+            
+            const lines = buffer.split('\n');
+            
+            // Keep last incomplete line in buffer
+            buffer = lines.pop() || '';
+            
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    const jsonStr = line.substring(6);
+                    if (jsonStr.trim()) {
+                        console.log('[STREAMING] Parsing line:', jsonStr.substring(0, 100));
+                        try {
+                            const chunk = JSON.parse(jsonStr);
+                            console.log('[STREAMING] Chunk parsed:', chunk.type, chunk.content?.substring(0, 20));
+                            
+                            if (chunk.type === 'content') {
+                                onChunk(chunk);
+                            } else if (chunk.type === 'end') {
+                                onComplete(chunk);
+                            } else if (chunk.type === 'error') {
+                                onError(chunk.error || 'Unknown error');
+                            }
+                        } catch (e) {
+                            console.error('[STREAMING] Failed to parse SSE chunk:', e, jsonStr);
+                        }
+                    }
+                }
+            }
+        }
+    }).catch(error => {
+        console.error('[STREAMING] Fatal error:', error);
+        onError(error.message);
+    });
+}
+
+
 async function getAvailableModels() {
     const data = await apiRequest('/llm/models');
     return data.models;
@@ -188,22 +270,34 @@ async function loadModelsFromBackend() {
             name: model.name,
             icon: getModelIcon(model.provider),
             description: model.provider,
-            price: `~${(model.price_output * 95).toFixed(2)}₽/1K токенов`,
+            price: `~${(model.price_output * 95).toFixed(2)}₽/1K`,
             context: `${Math.floor(model.context_length / 1000)}K`,
-            capabilities: model.capabilities
+            capabilities: model.capabilities,
+            tier: model.tier || 'balanced'
         }));
-        renderModelSelector();
+        
+        // Set default model to first premium model
+        if (AppState.models.length > 0) {
+            AppState.currentModel = AppState.models[0].id;
+            updateModelDisplay();
+        }
     } catch (error) {
         console.error('Failed to load models from backend:', error);
-        // Fallback to default models
+        showNotification('Не удалось загрузить модели', 'error');
     }
 }
 
 function getModelIcon(provider) {
-    if (provider.includes('OpenAI')) return '🔹';
-    if (provider.includes('Anthropic')) return '🟣';
-    if (provider.includes('Google')) return '🔶';
-    if (provider.includes('Meta')) return '🦙';
+    if (provider === 'OpenAI') return '🟢';
+    if (provider === 'Anthropic') return '🟣';
+    if (provider === 'Google') return '🔵';
+    if (provider === 'Meta') return '🦙';
+    if (provider === 'Mistral AI') return '🌊';
+    if (provider === 'Perplexity') return '🔍';
+    if (provider === 'Cohere') return '🧩';
+    if (provider === 'xAI') return '✖️';
+    if (provider === 'Alibaba') return '🐘';
+    if (provider === 'DeepSeek') return '🌊';
     return '🤖';
 }
 
@@ -863,45 +957,123 @@ async function sendMessage() {
     
     // Render new message
     const container = document.getElementById('messagesContainer');
-    container.appendChild(createMessageElement(userMessage));
-    container.scrollTop = container.scrollHeight;
+    const userMessageElement = createMessageElement(userMessage);
+    container.appendChild(userMessageElement);
+    userMessageElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
     
-    // Show typing indicator
-    addTypingIndicator();
+    // Create empty assistant message for streaming
+    const assistantMessage = {
+        role: 'assistant',
+        model: AppState.currentModel,
+        content: '',
+        timestamp: new Date(),
+        tokens: { input: 0, output: 0 },
+        cost: 0
+    };
     
-    // Send to backend API
+    chat.messages.push(assistantMessage);
+    const messageElement = createMessageElement(assistantMessage);
+    container.appendChild(messageElement);
+    const bodyElement = messageElement.querySelector('.message-body');
+    
+    // Send to backend API with streaming
     try {
-        const response = await sendMessageAPI(chat.id, content, AppState.currentModel);
-        
-        removeTypingIndicator();
-        
-        const assistantMessage = {
-            role: 'assistant',
-            model: AppState.currentModel,
-            content: response.content,
-            timestamp: new Date(),
-            tokens: response.tokens,
-            cost: response.cost
-        };
-        
-        chat.messages.push(assistantMessage);
-        chat.updatedAt = new Date();
-        
-        container.appendChild(createMessageElement(assistantMessage));
-        container.scrollTop = container.scrollHeight;
-        
-        // Update balance from server
-        if (currentUser) {
-            AppState.user.balance = currentUser.balance - response.cost;
-            currentUser.balance = AppState.user.balance;
-            localStorage.setItem('currentUser', JSON.stringify(currentUser));
-            updateBalance();
-        }
-        
-        renderChatList();
+        sendMessageStreamAPI(
+            chat.id,
+            content,
+            AppState.currentModel,
+            // onChunk - update message content as it streams with artificial delay for visual effect
+            (() => {
+                const chunkQueue = [];
+                
+                // Process queue with artificial delay for smooth visual streaming
+                const processQueue = async () => {
+                    while (chunkQueue.length > 0) {
+                        const chunk = chunkQueue.shift();
+                        assistantMessage.content += chunk.content;
+                        
+                        // Render current content
+                        bodyElement.innerHTML = marked.parse(assistantMessage.content);
+                        bodyElement.querySelectorAll('pre code').forEach((block) => {
+                            hljs.highlightElement(block);
+                        });
+                        
+                        // Smooth scroll to bottom
+                        messageElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                        
+                        // Artificial delay for visual streaming effect (20ms per chunk)
+                        await new Promise(resolve => setTimeout(resolve, 20));
+                    }
+                };
+                
+                return (chunk) => {
+                    chunkQueue.push(chunk);
+                    processQueue();
+                };
+            })(),
+            // onComplete - finalize message
+            (endChunk) => {
+                assistantMessage.tokens = endChunk.tokens || { input: 0, output: 0 };
+                assistantMessage.cost = endChunk.cost || 0;
+                chat.updatedAt = new Date();
+                
+                // Final render with all accumulated content
+                bodyElement.innerHTML = marked.parse(assistantMessage.content);
+                bodyElement.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+                
+                // Update message with final stats
+                const footer = messageElement.querySelector('.message-footer');
+                if (footer) {
+                    const stats = footer.querySelector('.message-stats') || document.createElement('div');
+                    stats.className = 'message-stats';
+                    stats.innerHTML = `
+                        <span>💬 ${assistantMessage.tokens.input + assistantMessage.tokens.output} токенов</span>
+                        <span>💰 ${assistantMessage.cost.toFixed(2)}₽</span>
+                    `;
+                    footer.appendChild(stats);
+                }
+                
+                // Update balance
+                updateBalance();
+                
+                // Auto-generate chat title from first message
+                if (chat.title === 'Новый чат' && chat.messages.length >= 2) {
+                    const newTitle = generateChatTitle(content);
+                    chat.title = newTitle;
+                    document.getElementById('chatTitle').textContent = newTitle;
+                    
+                    // Update title on backend
+                    updateChatAPI(chat.id, { title: newTitle }).catch(error => {
+                        console.error('Failed to update chat title:', error);
+                    });
+                }
+                
+                renderChatList();
+            },
+            // onError - handle errors
+            (error) => {
+                // Remove incomplete message
+                chat.messages.pop();
+                messageElement.remove();
+                
+                console.error('Error sending message:', error);
+                if (error.includes('402') || error.includes('Insufficient balance')) {
+                    showNotification('Недостаточно средств на балансе', 'error');
+                } else if (error.includes('401') || error.includes('Unauthorized')) {
+                    showNotification('Требуется авторизация', 'error');
+                    logout();
+                } else {
+                    showNotification('Ошибка: ' + error, 'error');
+                }
+            }
+        );
         
     } catch (error) {
-        removeTypingIndicator();
+        // Remove incomplete message
+        chat.messages.pop();
+        messageElement.remove();
         console.error('Error sending message:', error);
         showNotification('Ошибка: ' + error.message, 'error');
     }
@@ -973,17 +1145,14 @@ function handleInputChange(e) {
 }
 
 function handleInputKeydown(e) {
-    // Send on Ctrl/Cmd + Enter
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    // Send on Enter (without Shift)
+    if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendMessage();
     }
     
-    // New line on Enter alone
-    if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        // Allow default behavior (new line)
-        // Unless user wants Enter to send instead
-    }
+    // New line on Shift + Enter
+    // (default textarea behavior when we don't preventDefault)
 }
 
 function updateSendButton() {
@@ -1090,27 +1259,61 @@ function renderModelsGrid() {
     const grid = document.getElementById('modelsGrid');
     grid.innerHTML = '';
     
-    AppState.models.forEach(model => {
-        const card = document.createElement('div');
-        card.className = 'model-card';
-        if (model.id === AppState.currentModel) {
-            card.classList.add('selected');
-        }
+    // Group models by tier
+    const tierNames = {
+        premium: '⭐ Premium Models',
+        balanced: '⚖️ Balanced Models',
+        budget: '💰 Budget Models',
+        specialized: '🎯 Specialized Models'
+    };
+    
+    const tierOrder = ['premium', 'balanced', 'budget', 'specialized'];
+    
+    tierOrder.forEach(tier => {
+        const tieredModels = AppState.models.filter(m => m.tier === tier);
+        if (tieredModels.length === 0) return;
         
-        card.innerHTML = `
-            <div class="model-card-header">
-                <span class="model-card-icon">${model.icon}</span>
-                <span class="model-card-name">${model.name}</span>
-            </div>
-            <div class="model-card-description">${model.description}</div>
-            <div class="model-card-specs">
-                <span class="model-spec">${model.price}</span>
-                <span class="model-spec">🧠 ${model.context}</span>
-            </div>
-        `;
+        // Add tier header
+        const tierHeader = document.createElement('div');
+        tierHeader.className = 'tier-header';
+        tierHeader.textContent = tierNames[tier];
+        grid.appendChild(tierHeader);
         
-        card.addEventListener('click', () => selectModel(model.id));
-        grid.appendChild(card);
+        // Add models in this tier
+        tieredModels.forEach(model => {
+            const card = document.createElement('div');
+            card.className = 'model-card';
+            if (model.id === AppState.currentModel) {
+                card.classList.add('selected');
+            }
+            
+            // Add tier badge
+            const tierBadge = tier === 'premium' ? '⭐' : 
+                            tier === 'budget' ? '💰' : 
+                            tier === 'specialized' ? '🎯' : '⚖️';
+            
+            // Highlight special capabilities
+            const badges = [];
+            if (model.capabilities.includes('vision')) badges.push('👁️');
+            if (model.capabilities.includes('web-search')) badges.push('🌐');
+            if (model.capabilities.includes('reasoning')) badges.push('🧠');
+            
+            card.innerHTML = `
+                <div class="model-card-header">
+                    <span class="model-card-icon">${model.icon}</span>
+                    <span class="model-card-name">${model.name}</span>
+                    ${badges.length > 0 ? `<span class="model-badges">${badges.join('')}</span>` : ''}
+                </div>
+                <div class="model-card-description">${model.description}</div>
+                <div class="model-card-specs">
+                    <span class="model-spec">💵 ${model.price}</span>
+                    <span class="model-spec">📝 ${model.context}</span>
+                </div>
+            `;
+            
+            card.addEventListener('click', () => selectModel(model.id));
+            grid.appendChild(card);
+        });
     });
 }
 
@@ -1130,6 +1333,26 @@ function updateModelDisplay() {
 function getModelName(modelId) {
     const model = AppState.models.find(m => m.id === modelId);
     return model ? model.name : modelId;
+}
+
+// Generate chat title from user message
+function generateChatTitle(message) {
+    // Remove extra whitespace
+    const cleaned = message.trim();
+    
+    // If message is short, use it as is (max 50 chars)
+    if (cleaned.length <= 50) {
+        return cleaned;
+    }
+    
+    // Take first sentence or first 50 chars
+    const firstSentence = cleaned.split(/[.!?]/)[0];
+    if (firstSentence.length <= 50) {
+        return firstSentence;
+    }
+    
+    // Truncate to 50 chars and add ellipsis
+    return cleaned.substring(0, 47) + '...';
 }
 
 // Profile Management
