@@ -1,6 +1,212 @@
 // AI Chat Platform - Main Application
 // =====================================
 
+// API Configuration
+const API_CONFIG = {
+    // Замените на ваш Railway URL после деплоя backend
+    baseURL: 'http://localhost:8000/api/v1',
+    // Production: 'https://your-backend.railway.app/api/v1'
+};
+
+// Auth state
+let authToken = localStorage.getItem('authToken');
+let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+
+// API Helper Function
+async function apiRequest(endpoint, options = {}) {
+    const url = `${API_CONFIG.baseURL}${endpoint}`;
+    
+    const config = {
+        ...options,
+        headers: {
+            'Content-Type': 'application/json',
+            ...options.headers,
+        },
+    };
+    
+    // Add auth token if available
+    if (authToken && !options.skipAuth) {
+        config.headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    
+    try {
+        const response = await fetch(url, config);
+        
+        // Handle 401 Unauthorized
+        if (response.status === 401) {
+            logout();
+            showNotification('Сессия истекла. Войдите снова.', 'error');
+            throw new Error('Unauthorized');
+        }
+        
+        // Handle 402 Payment Required
+        if (response.status === 402) {
+            showNotification('Недостаточно средств. Пополните баланс.', 'warning');
+            throw new Error('Insufficient balance');
+        }
+        
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+        
+        return await response.json();
+    } catch (error) {
+        console.error('API Request failed:', error);
+        throw error;
+    }
+}
+
+// Authentication Functions
+async function register(email, password) {
+    const data = await apiRequest('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+        skipAuth: true,
+    });
+    
+    authToken = data.access_token;
+    localStorage.setItem('authToken', authToken);
+    localStorage.setItem('refreshToken', data.refresh_token);
+    localStorage.setItem('currentUser', JSON.stringify(data.user));
+    currentUser = data.user;
+    
+    AppState.user.balance = data.user.balance;
+    updateBalance();
+    
+    return data;
+}
+
+async function login(email, password) {
+    const data = await apiRequest('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+        skipAuth: true,
+    });
+    
+    authToken = data.access_token;
+    localStorage.setItem('authToken', authToken);
+    localStorage.setItem('refreshToken', data.refresh_token);
+    localStorage.setItem('currentUser', JSON.stringify(data.user));
+    currentUser = data.user;
+    
+    AppState.user.balance = data.user.balance;
+    updateBalance();
+    
+    return data;
+}
+
+function logout() {
+    authToken = null;
+    currentUser = null;
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('currentUser');
+    
+    AppState.chats = [];
+    AppState.currentChatId = null;
+    AppState.user.balance = 0;
+    
+    showNotification('Вы вышли из системы', 'info');
+    updateAuthUI();
+    updateBalance();
+    renderChatList();
+    
+    // Show welcome screen
+    document.getElementById('welcomeScreen').style.display = 'flex';
+    document.getElementById('chatContainer').style.display = 'none';
+}
+
+// Update auth UI based on login status
+function updateAuthUI() {
+    const authBtn = document.getElementById('authBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    
+    if (authToken && currentUser) {
+        // Logged in
+        if (authBtn) authBtn.style.display = 'none';
+        if (logoutBtn) logoutBtn.style.display = 'inline-flex';
+    } else {
+        // Not logged in
+        if (authBtn) authBtn.style.display = 'inline-flex';
+        if (logoutBtn) logoutBtn.style.display = 'none';
+    }
+}
+
+// Chat API Functions
+async function createChatAPI(title = "Новый чат") {
+    return await apiRequest('/chats', {
+        method: 'POST',
+        body: JSON.stringify({ title }),
+    });
+}
+
+async function getUserChats() {
+    return await apiRequest('/chats');
+}
+
+async function getChatWithMessages(chatId) {
+    return await apiRequest(`/chats/${chatId}`);
+}
+
+async function updateChatAPI(chatId, updates) {
+    return await apiRequest(`/chats/${chatId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+    });
+}
+
+async function deleteChatAPI(chatId) {
+    await apiRequest(`/chats/${chatId}`, {
+        method: 'DELETE',
+    });
+}
+
+// LLM API Functions
+async function sendMessageAPI(chatId, content, model) {
+    return await apiRequest(`/llm/chat/${chatId}/message`, {
+        method: 'POST',
+        body: JSON.stringify({
+            content: content,
+            model: model,
+            attachments: AppState.attachments || []
+        })
+    });
+}
+
+async function getAvailableModels() {
+    const data = await apiRequest('/llm/models');
+    return data.models;
+}
+
+// Load models from backend
+async function loadModelsFromBackend() {
+    try {
+        const models = await getAvailableModels();
+        AppState.models = models.map(model => ({
+            id: model.id,
+            name: model.name,
+            icon: getModelIcon(model.provider),
+            description: model.provider,
+            price: `~${(model.price_output * 95).toFixed(2)}₽/1K токенов`,
+            context: `${Math.floor(model.context_length / 1000)}K`,
+            capabilities: model.capabilities
+        }));
+        renderModelSelector();
+    } catch (error) {
+        console.error('Failed to load models from backend:', error);
+        // Fallback to default models
+    }
+}
+
+function getModelIcon(provider) {
+    if (provider.includes('OpenAI')) return '🔹';
+    if (provider.includes('Anthropic')) return '🟣';
+    if (provider.includes('Google')) return '🔶';
+    if (provider.includes('Meta')) return '🦙';
+    return '🤖';
+}
+
 // Application State
 const AppState = {
     currentChatId: null,
@@ -92,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setupMarkdown();
 });
 
-function initializeApp() {
+async function initializeApp() {
     // Configure marked.js for markdown rendering
     if (typeof marked !== 'undefined') {
         marked.setOptions({
@@ -109,7 +315,27 @@ function initializeApp() {
         });
     }
     
-    updateBalance();
+    // Load models from backend
+    await loadModelsFromBackend();
+    
+    // If user is logged in, load their data
+    if (authToken && currentUser) {
+        try {
+            // Update user balance
+            AppState.user.balance = currentUser.balance || 0;
+            updateBalance();
+            
+            // Load user's chats
+            await loadUserChats();
+        } catch (error) {
+            console.error('Failed to load user data:', error);
+            // Token might be expired
+            logout();
+        }
+    } else {
+        updateBalance();
+    }
+    
     updateModelDisplay();
     initializeVoiceRecognition();
     initializeTheme();
@@ -286,6 +512,15 @@ function setupEventListeners() {
     
     // Theme toggle
     document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+    
+    // Auth buttons
+    const authBtn = document.getElementById('authBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (authBtn) authBtn.addEventListener('click', showAuthModal);
+    if (logoutBtn) logoutBtn.addEventListener('click', logout);
+    
+    // Update auth UI based on login status
+    updateAuthUI();
 }
 
 function setupMarkdown() {
@@ -304,27 +539,37 @@ function toggleSidebar() {
 }
 
 // Chat Management
-function createNewChat() {
-    const chatId = `chat_${Date.now()}`;
-    const newChat = {
-        id: chatId,
-        title: 'Новый чат',
-        messages: [],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        model: AppState.currentModel
-    };
+async function createNewChat() {
+    if (!authToken) {
+        showNotification('Войдите в систему для создания чата', 'error');
+        return;
+    }
     
-    AppState.chats.unshift(newChat);
-    AppState.currentChatId = chatId;
-    
-    renderChatList();
-    showChat(chatId);
+    try {
+        const newChat = await createChatAPI('Новый чат');
+        
+        const chat = {
+            id: newChat.id,
+            title: newChat.title,
+            messages: [],
+            createdAt: new Date(newChat.created_at),
+            updatedAt: new Date(newChat.updated_at)
+        };
+        
+        AppState.chats.unshift(chat);
+        AppState.currentChatId = chat.id;
+        
+        renderChatList();
+        showChat(chat.id);
+    } catch (error) {
+        console.error('Failed to create chat:', error);
+        showNotification('Не удалось создать чат: ' + error.message, 'error');
+    }
 }
 
-function showChat(chatId) {
+async function showChat(chatId) {
     AppState.currentChatId = chatId;
-    const chat = AppState.chats.find(c => c.id === chatId);
+    let chat = AppState.chats.find(c => c.id === chatId);
     
     if (!chat) return;
     
@@ -335,6 +580,30 @@ function showChat(chatId) {
     // Update chat title
     document.getElementById('chatTitle').textContent = chat.title;
     
+    // Load messages from backend if not loaded yet
+    if (authToken && chat.messages.length === 0) {
+        try {
+            addTypingIndicator();
+            const chatData = await getChatWithMessages(chatId);
+            chat.messages = chatData.messages.map(msg => ({
+                role: msg.role,
+                content: msg.content,
+                model: msg.model_used,
+                timestamp: new Date(msg.created_at),
+                tokens: {
+                    input: msg.tokens_input,
+                    output: msg.tokens_output
+                },
+                cost: msg.cost
+            }));
+            removeTypingIndicator();
+        } catch (error) {
+            removeTypingIndicator();
+            console.error('Failed to load messages:', error);
+            showNotification('Не удалось загрузить сообщения', 'error');
+        }
+    }
+    
     // Render messages
     renderMessages(chat.messages);
     
@@ -344,88 +613,38 @@ function showChat(chatId) {
     });
 }
 
-function loadSampleChats() {
-    // Load some sample chats for demo
-    const sampleChats = [
-        {
-            id: 'chat_1',
-            title: 'Как создать RESTful API',
-            messages: [
-                {
-                    role: 'user',
-                    content: 'Как создать RESTful API на FastAPI?',
-                    timestamp: new Date(Date.now() - 3600000)
-                },
-                {
-                    role: 'assistant',
-                    model: 'gpt-4-turbo',
-                    content: `Создание RESTful API на FastAPI — отличный выбор! Вот базовый пример:
-
-\`\`\`python
-from fastapi import FastAPI
-from pydantic import BaseModel
-
-app = FastAPI()
-
-class Item(BaseModel):
-    name: str
-    price: float
-    description: str = None
-
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
-
-@app.get("/items/{item_id}")
-async def read_item(item_id: int):
-    return {"item_id": item_id}
-
-@app.post("/items/")
-async def create_item(item: Item):
-    return item
-\`\`\`
-
-Основные преимущества FastAPI:
-- Автоматическая валидация данных через Pydantic
-- Автоматическая документация (Swagger UI)
-- Высокая производительность
-- Поддержка async/await
-
-Для запуска используй: \`uvicorn main:app --reload\``,
-                    timestamp: new Date(Date.now() - 3500000),
-                    tokens: { input: 15, output: 180 },
-                    cost: 0.39
-                }
-            ],
-            createdAt: new Date(Date.now() - 3600000),
-            updatedAt: new Date(Date.now() - 3500000)
-        },
-        {
-            id: 'chat_2',
-            title: 'Анализ изображения',
-            messages: [
-                {
-                    role: 'user',
-                    content: 'Что на этом изображении?',
-                    timestamp: new Date(Date.now() - 7200000),
-                    attachments: [{ type: 'image', name: 'screenshot.png' }]
-                },
-                {
-                    role: 'assistant',
-                    model: 'gpt-4-turbo',
-                    content: 'На изображении показан код интерфейса React приложения. Вижу компонент с использованием хуков useState и useEffect...',
-                    timestamp: new Date(Date.now() - 7100000),
-                    tokens: { input: 1250, output: 85 },
-                    cost: 2.67
-                }
-            ],
-            createdAt: new Date(Date.now() - 7200000),
-            updatedAt: new Date(Date.now() - 7100000)
-        }
-    ];
+async function loadUserChats() {
+    if (!authToken) {
+        // Not logged in, show empty state
+        AppState.chats = [];
+        renderChatList();
+        return;
+    }
     
-    AppState.chats = sampleChats;
-    renderChatList();
+    try {
+        const chats = await getUserChats();
+        
+        AppState.chats = chats.map(chat => ({
+            id: chat.id,
+            title: chat.title,
+            messages: [], // Messages will be loaded when chat is opened
+            createdAt: new Date(chat.created_at),
+            updatedAt: new Date(chat.updated_at),
+            is_favorite: chat.is_favorite
+        }));
+        
+        renderChatList();
+    } catch (error) {
+        console.error('Failed to load chats:', error);
+        showNotification('Не удалось загрузить чаты', 'error');
+        AppState.chats = [];
+        renderChatList();
+    }
+}
+
+// For backward compatibility, keep this function but make it call loadUserChats
+function loadSampleChats() {
+    loadUserChats();
 }
 
 function renderChatList() {
@@ -595,12 +814,35 @@ async function sendMessage() {
     
     if (!content && AppState.attachments.length === 0) return;
     
+    // Check if user is logged in
+    if (!authToken) {
+        showNotification('Войдите в систему для отправки сообщений', 'error');
+        // Show login modal (you can add this later)
+        return;
+    }
+    
     // Get or create current chat
     let chat = AppState.chats.find(c => c.id === AppState.currentChatId);
     
     if (!chat) {
-        createNewChat();
-        chat = AppState.chats.find(c => c.id === AppState.currentChatId);
+        try {
+            // Create chat via API
+            const newChat = await createChatAPI(content.substring(0, 50));
+            chat = {
+                id: newChat.id,
+                title: newChat.title,
+                messages: [],
+                createdAt: new Date(newChat.created_at),
+                updatedAt: new Date(newChat.updated_at)
+            };
+            AppState.chats.unshift(chat);
+            AppState.currentChatId = chat.id;
+            renderChatList();
+            showChat(chat.id);
+        } catch (error) {
+            showNotification('Не удалось создать чат: ' + error.message, 'error');
+            return;
+        }
     }
     
     // Add user message
@@ -624,19 +866,12 @@ async function sendMessage() {
     container.appendChild(createMessageElement(userMessage));
     container.scrollTop = container.scrollHeight;
     
-    // Update chat title if first message
-    if (chat.messages.length === 1) {
-        chat.title = content.substring(0, 50) + (content.length > 50 ? '...' : '');
-        document.getElementById('chatTitle').textContent = chat.title;
-        renderChatList();
-    }
-    
     // Show typing indicator
     addTypingIndicator();
     
-    // Simulate API call
+    // Send to backend API
     try {
-        const response = await simulateAIResponse(content, AppState.currentModel);
+        const response = await sendMessageAPI(chat.id, content, AppState.currentModel);
         
         removeTypingIndicator();
         
@@ -655,15 +890,20 @@ async function sendMessage() {
         container.appendChild(createMessageElement(assistantMessage));
         container.scrollTop = container.scrollHeight;
         
-        // Update balance
-        AppState.user.balance -= response.cost;
-        updateBalance();
+        // Update balance from server
+        if (currentUser) {
+            AppState.user.balance = currentUser.balance - response.cost;
+            currentUser.balance = AppState.user.balance;
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
+            updateBalance();
+        }
+        
         renderChatList();
         
     } catch (error) {
         removeTypingIndicator();
         console.error('Error sending message:', error);
-        alert('Ошибка при отправке сообщения. Попробуйте еще раз.');
+        showNotification('Ошибка: ' + error.message, 'error');
     }
 }
 
@@ -1150,6 +1390,100 @@ function showNotification(message, type = 'info', duration = 3000) {
     }, duration);
 }
 
+// Auth Modal Functions
+function showAuthModal() {
+    document.getElementById('authModal').style.display = 'flex';
+    switchToLogin();
+}
+
+function closeAuthModal() {
+    document.getElementById('authModal').style.display = 'none';
+}
+
+function switchToLogin() {
+    document.getElementById('loginForm').style.display = 'block';
+    document.getElementById('registerForm').style.display = 'none';
+    document.getElementById('authModalTitle').textContent = 'Вход в AI Chat Platform';
+}
+
+function switchToRegister() {
+    document.getElementById('loginForm').style.display = 'none';
+    document.getElementById('registerForm').style.display = 'block';
+    document.getElementById('authModalTitle').textContent = 'Регистрация';
+}
+
+async function handleLogin() {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    
+    if (!email || !password) {
+        showNotification('Заполните все поля', 'error');
+        return;
+    }
+    
+    try {
+        await login(email, password);
+        closeAuthModal();
+        showNotification('Вход выполнен успешно! Добро пожаловать!', 'success');
+        
+        // Update UI
+        updateAuthUI();
+        updateBalance();
+        
+        // Load user data
+        await loadUserChats();
+        
+        // Clear login form
+        document.getElementById('loginEmail').value = '';
+        document.getElementById('loginPassword').value = '';
+        
+    } catch (error) {
+        showNotification('Ошибка входа: ' + error.message, 'error');
+    }
+}
+
+async function handleRegister() {
+    const email = document.getElementById('registerEmail').value.trim();
+    const password = document.getElementById('registerPassword').value;
+    const passwordConfirm = document.getElementById('registerPasswordConfirm').value;
+    
+    if (!email || !password || !passwordConfirm) {
+        showNotification('Заполните все поля', 'error');
+        return;
+    }
+    
+    if (password.length < 8) {
+        showNotification('Пароль должен быть минимум 8 символов', 'error');
+        return;
+    }
+    
+    if (password !== passwordConfirm) {
+        showNotification('Пароли не совпадают', 'error');
+        return;
+    }
+    
+    try {
+        await register(email, password);
+        closeAuthModal();
+        showNotification('Регистрация успешна! Добро пожаловать в AI Chat Platform!', 'success');
+        
+        // Update UI
+        updateAuthUI();
+        updateBalance();
+        
+        // Load initial data
+        await loadUserChats();
+        
+        // Clear register form
+        document.getElementById('registerEmail').value = '';
+        document.getElementById('registerPassword').value = '';
+        document.getElementById('registerPasswordConfirm').value = '';
+        
+    } catch (error) {
+        showNotification('Ошибка регистрации: ' + error.message, 'error');
+    }
+}
+
 // Make functions available globally
 window.updateValueSlider = updateValueSlider;
 window.removeInterest = removeInterest;
@@ -1157,3 +1491,9 @@ window.removeSkill = removeSkill;
 window.removeAttachment = removeAttachment;
 window.copyMessage = copyMessage;
 window.regenerateMessage = regenerateMessage;
+window.handleLogin = handleLogin;
+window.handleRegister = handleRegister;
+window.showAuthModal = showAuthModal;
+window.closeAuthModal = closeAuthModal;
+window.switchToLogin = switchToLogin;
+window.switchToRegister = switchToRegister;
