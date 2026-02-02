@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Демо голосового ввода</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 3rem;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 0.5rem;
+            font-size: 2rem;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 2rem;
+            font-size: 0.95rem;
+        }
+        
+        .demo-area {
+            background: #f7f7f8;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .mic-button {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 3rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 0 auto 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .mic-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        
+        .mic-button.recording {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+        }
+        
+        .status {
+            text-align: center;
+            font-size: 1.1rem;
+            color: #333;
+            margin-bottom: 1.5rem;
+            min-height: 30px;
+            font-weight: 500;
+        }
+        
+        .status.recording {
+            color: #ef4444;
+        }
+        
+        textarea {
+            width: 100%;
+            min-height: 150px;
+            border: 2px solid #e5e5e5;
+            border-radius: 12px;
+            padding: 1rem;
+            font-size: 1rem;
+            font-family: inherit;
+            resize: vertical;
+            transition: border-color 0.3s ease;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        button {
+            flex: 1;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+        
+        .clear-btn {
+            background: #f3f4f6;
+            color: #333;
+        }
+        
+        .clear-btn:hover {
+            background: #e5e7eb;
+        }
+        
+        .copy-btn {
+            background: #667eea;
+            color: white;
+        }
+        
+        .copy-btn:hover {
+            background: #5568d3;
+        }
+        
+        .info {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 2rem;
+            font-size: 0.9rem;
+            color: #1e40af;
+        }
+        
+        .info strong {
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        
+        .browser-support {
+            margin-top: 2rem;
+            padding: 1rem;
+            background: #f9fafb;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: #666;
+        }
+        
+        .support-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .support-yes {
+            color: #10b981;
+            font-weight: bold;
+        }
+        
+        .support-no {
+            color: #ef4444;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Демо голосового ввода</h1>
+        <p class="subtitle">Нажмите на микрофон и говорите</p>
+        
+        <div class="demo-area">
+            <button class="mic-button" id="micButton">🎤</button>
+            <div class="status" id="status">Нажмите на микрофон для начала</div>
+            <textarea id="transcript" placeholder="Здесь появится распознанный текст..."></textarea>
+            <div class="controls">
+                <button class="clear-btn" onclick="clearText()">Очистить</button>
+                <button class="copy-btn" onclick="copyText()">Копировать</button>
+            </div>
+        </div>
+        
+        <div class="info">
+            <strong>💡 Советы для лучшего распознавания:</strong>
+            <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
+                <li>Говорите четко и не слишком быстро</li>
+                <li>Находитесь в тихом месте</li>
+                <li>Держите микрофон на расстоянии 15-30 см</li>
+                <li>Делайте короткие паузы между фразами</li>
+            </ul>
+        </div>
+        
+        <div class="browser-support">
+            <strong>Поддержка браузеров:</strong>
+            <div class="support-item">
+                <span class="support-yes">✓</span> Chrome, Edge, Opera
+            </div>
+            <div class="support-item">
+                <span class="support-yes">✓</span> Safari (macOS & iOS)
+            </div>
+            <div class="support-item">
+                <span class="support-no">✗</span> Firefox (нет поддержки Web Speech API)
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let recognition = null;
+        let isRecording = false;
+
+        // Initialize Speech Recognition
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            
+            if (!SpeechRecognition) {
+                document.getElementById('status').textContent = '❌ Ваш браузер не поддерживает распознавание речи';
+                document.getElementById('micButton').disabled = true;
+                document.getElementById('micButton').style.opacity = '0.3';
+                return false;
+            }
+            
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = true;
+            recognition.lang = 'ru-RU';
+            
+            recognition.onstart = () => {
+                isRecording = true;
+                document.getElementById('micButton').classList.add('recording');
+                document.getElementById('micButton').textContent = '🔴';
+                document.getElementById('status').textContent = '🎤 Говорите... (нажмите для остановки)';
+                document.getElementById('status').classList.add('recording');
+            };
+            
+            recognition.onresult = (event) => {
+                let finalTranscript = '';
+                let interimTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript + ' ';
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+                
+                const textarea = document.getElementById('transcript');
+                
+                if (finalTranscript) {
+                    textarea.value += finalTranscript;
+                } else if (interimTranscript) {
+                    document.getElementById('status').textContent = `⏳ Распознаю: "${interimTranscript}"`;
+                }
+            };
+            
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                stopRecording();
+                
+                let errorMsg = 'Ошибка распознавания';
+                switch (event.error) {
+                    case 'no-speech':
+                        errorMsg = '⚠️ Речь не обнаружена. Попробуйте снова.';
+                        break;
+                    case 'audio-capture':
+                        errorMsg = '❌ Микрофон не найден';
+                        break;
+                    case 'not-allowed':
+                        errorMsg = '🔒 Доступ к микрофону запрещен';
+                        break;
+                    case 'network':
+                        errorMsg = '🌐 Ошибка сети';
+                        break;
+                }
+                
+                document.getElementById('status').textContent = errorMsg;
+            };
+            
+            recognition.onend = () => {
+                stopRecording();
+                const textarea = document.getElementById('transcript');
+                if (textarea.value.trim()) {
+                    document.getElementById('status').textContent = '✅ Готово! Нажмите микрофон для продолжения';
+                } else {
+                    document.getElementById('status').textContent = 'Нажмите на микрофон для начала';
+                }
+            };
+            
+            return true;
+        }
+
+        function toggleRecording() {
+            if (!recognition) {
+                alert('Распознавание речи не инициализировано');
+                return;
+            }
+            
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                try {
+                    recognition.start();
+                } catch (error) {
+                    console.error('Error starting recognition:', error);
+                }
+            }
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            document.getElementById('micButton').classList.remove('recording');
+            document.getElementById('micButton').textContent = '🎤';
+            document.getElementById('status').classList.remove('recording');
+        }
+
+        function clearText() {
+            document.getElementById('transcript').value = '';
+            document.getElementById('status').textContent = 'Текст очищен. Нажмите микрофон для начала';
+        }
+
+        function copyText() {
+            const textarea = document.getElementById('transcript');
+            if (!textarea.value.trim()) {
+                alert('Нечего копировать!');
+                return;
+            }
+            
+            textarea.select();
+            document.execCommand('copy');
+            
+            const originalStatus = document.getElementById('status').textContent;
+            document.getElementById('status').textContent = '✅ Текст скопирован в буфер обмена!';
+            
+            setTimeout(() => {
+                document.getElementById('status').textContent = originalStatus;
+            }, 2000);
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            if (initSpeechRecognition()) {
+                document.getElementById('micButton').addEventListener('click', toggleRecording);
+            }
+        });
+    </script>
+</body>
+</html>

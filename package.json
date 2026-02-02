@@ -1,0 +1,29 @@
+{
+  "name": "ai-chat-platform",
+  "version": "1.0.0",
+  "description": "Персонализированная платформа для общения с различными AI моделями",
+  "main": "index.html",
+  "scripts": {
+    "start": "python3 -m http.server 8888",
+    "dev": "python3 -m http.server 8888",
+    "serve": "python3 -m http.server 8888"
+  },
+  "keywords": [
+    "ai",
+    "chat",
+    "gpt",
+    "claude",
+    "gemini",
+    "llm",
+    "chatbot",
+    "personalization"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/ai-chat-platform.git"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
