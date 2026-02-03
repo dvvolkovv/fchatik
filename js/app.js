@@ -689,8 +689,8 @@ async function showChat(chatId) {
     // Update chat title
     document.getElementById('chatTitle').textContent = chat.title;
     
-    // Load messages from backend if not loaded yet
-    if (authToken && chat.messages.length === 0) {
+    // Always load messages from backend to ensure they are up to date
+    if (authToken) {
         try {
             addTypingIndicator();
             const chatData = await getChatWithMessages(chatId);
