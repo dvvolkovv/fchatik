@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест стриминга</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        #output {
+            border: 2px solid #333;
+            padding: 20px;
+            min-height: 200px;
+            background: #0f0f0f;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin: 20px 0;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #10a37f;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #0d8c6a;
+        }
+        .cursor {
+            animation: blink 1s infinite;
+        }
+        @keyframes blink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
+        }
+        .log {
+            background: #222;
+            padding: 10px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            border-left: 3px solid #10a37f;
+        }
+        .error {
+            border-left-color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Тест стриминга SSE</h1>
+    
+    <button onclick="testSimpleStream()">Тест 1: Простой стрим</button>
+    <button onclick="testRealAPI()">Тест 2: Реальный API</button>
+    <button onclick="clearOutput()">Очистить</button>
+    
+    <div id="logs"></div>
+    <div id="output"></div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api/v1';
+        let authToken = localStorage.getItem('authToken');
+        
+        function log(message, isError = false) {
+            const logDiv = document.createElement('div');
+            logDiv.className = isError ? 'log error' : 'log';
+            logDiv.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            document.getElementById('logs').appendChild(logDiv);
+            console.log(message);
+        }
+        
+        function clearOutput() {
+            document.getElementById('output').textContent = '';
+            document.getElementById('logs').innerHTML = '';
+        }
+        
+        // Тест 1: Симуляция стриминга (без сервера)
+        async function testSimpleStream() {
+            clearOutput();
+            log('🧪 Запуск теста 1: Симуляция стриминга');
+            
+            const output = document.getElementById('output');
+            const words = "Hello this is a streaming test each word should appear gradually one by one".split(' ');
+            
+            for (let i = 0; i < words.length; i++) {
+                const word = words[i] + ' ';
+                output.textContent += word;
+                output.innerHTML += '<span class="cursor">▋</span>';
+                
+                log(`Chunk ${i + 1}: "${word}"`);
+                
+                // Принудительный reflow
+                output.offsetHeight;
+                
+                // Задержка между словами
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // Убрать курсор
+                const cursor = output.querySelector('.cursor');
+                if (cursor) cursor.remove();
+            }
+            
+            log('✅ Тест 1 завершен');
+        }
+        
+        // Тест 2: Реальный API
+        async function testRealAPI() {
+            clearOutput();
+            log('🧪 Запуск теста 2: Реальный API стриминг');
+            
+            if (!authToken) {
+                log('❌ Ошибка: Нет токена авторизации. Войдите в систему сначала.', true);
+                return;
+            }
+            
+            // Получить список чатов
+            log('📋 Получение списка чатов...');
+            const chatsResponse = await fetch(`${API_URL}/chats/`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            
+            if (!chatsResponse.ok) {
+                log(`❌ Ошибка получения чатов: ${chatsResponse.status}`, true);
+                return;
+            }
+            
+            const chats = await chatsResponse.json();
+            log(`✅ Получено чатов: ${chats.length}`);
+            
+            if (chats.length === 0) {
+                log('❌ Нет чатов. Создайте чат сначала.', true);
+                return;
+            }
+            
+            const chatId = chats[0].id;
+            log(`💬 Использую чат: ${chatId}`);
+            
+            // Отправить стриминг запрос
+            const url = `${API_URL}/llm/chat/${chatId}/message/stream`;
+            log(`🔗 URL: ${url}`);
+            
+            const output = document.getElementById('output');
+            let chunkCount = 0;
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({
+                        content: 'Скажи "привет мир" по буквам с паузами',
+                        model: 'openai/gpt-3.5-turbo',
+                        attachments: []
+                    })
+                });
+                
+                log(`📡 Response status: ${response.status}`);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    log(`❌ Ошибка: ${errorText}`, true);
+                    return;
+                }
+                
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                
+                log('📥 Начинаю читать стрим...');
+                
+                while (true) {
+                    const {done, value} = await reader.read();
+                    
+                    if (done) {
+                        log('✅ Стрим завершен');
+                        break;
+                    }
+                    
+                    buffer += decoder.decode(value, {stream: true});
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const jsonStr = line.substring(6);
+                            if (jsonStr.trim()) {
+                                try {
+                                    const chunk = JSON.parse(jsonStr);
+                                    chunkCount++;
+                                    
+                                    if (chunk.type === 'content') {
+                                        output.textContent += chunk.content;
+                                        log(`📦 Chunk ${chunkCount}: "${chunk.content}"`);
+                                        
+                                        // Принудительный reflow
+                                        output.offsetHeight;
+                                    } else if (chunk.type === 'start') {
+                                        log(`🚀 Старт: model=${chunk.model}`);
+                                    } else if (chunk.type === 'end') {
+                                        log(`🏁 Конец: tokens=${JSON.stringify(chunk.tokens)}, cost=${chunk.cost}`);
+                                    } else if (chunk.type === 'error') {
+                                        log(`❌ Ошибка: ${chunk.error}`, true);
+                                    }
+                                } catch (e) {
+                                    log(`❌ Ошибка парсинга: ${e.message}`, true);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                log(`✅ Тест 2 завершен. Всего чанков: ${chunkCount}`);
+                
+            } catch (error) {
+                log(`❌ Фатальная ошибка: ${error.message}`, true);
+            }
+        }
+    </script>
+</body>
+</html>

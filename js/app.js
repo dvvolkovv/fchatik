@@ -3,13 +3,12 @@
 
 // API Configuration
 const API_CONFIG = {
-    // Замените на ваш Railway URL после деплоя backend
-    baseURL: 'http://localhost:8000/api/v1',
-    // Production: 'https://your-backend.railway.app/api/v1'
+    // Автоматически использует Railway URL если config.js загружен
+    baseURL: window.CONFIG ? `${window.CONFIG.API_BASE_URL}${window.CONFIG.API_PREFIX}` : 'http://localhost:8000/api/v1'
 };
 
 // Auth state
-let authToken = localStorage.getItem('authToken');
+let authToken = localStorage.getItem('token');
 let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
 
 // API Helper Function
@@ -66,7 +65,7 @@ async function register(email, password) {
     });
     
     authToken = data.access_token;
-    localStorage.setItem('authToken', authToken);
+    localStorage.setItem('token', authToken);
     localStorage.setItem('refreshToken', data.refresh_token);
     localStorage.setItem('currentUser', JSON.stringify(data.user));
     currentUser = data.user;
@@ -85,7 +84,7 @@ async function login(email, password) {
     });
     
     authToken = data.access_token;
-    localStorage.setItem('authToken', authToken);
+    localStorage.setItem('token', authToken);
     localStorage.setItem('refreshToken', data.refresh_token);
     localStorage.setItem('currentUser', JSON.stringify(data.user));
     currentUser = data.user;
@@ -99,7 +98,7 @@ async function login(email, password) {
 function logout() {
     authToken = null;
     currentUser = null;
-    localStorage.removeItem('authToken');
+    localStorage.removeItem('token');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('currentUser');
     
@@ -180,6 +179,10 @@ function sendMessageStreamAPI(chatId, content, model, onChunk, onComplete, onErr
     
     console.log('[STREAMING] Starting request:', {url, chatId, model});
     
+    // Store abort controller for cancellation
+    const abortController = new AbortController();
+    AppState.currentStreamAbortController = abortController;
+    
     fetch(url, {
         method: 'POST',
         headers: {
@@ -190,7 +193,8 @@ function sendMessageStreamAPI(chatId, content, model, onChunk, onComplete, onErr
             content: content,
             model: model,
             attachments: AppState.attachments || []
-        })
+        }),
+        signal: abortController.signal
     }).then(async response => {
         console.log('[STREAMING] Response received:', {
             status: response.status,
@@ -211,15 +215,12 @@ function sendMessageStreamAPI(chatId, content, model, onChunk, onComplete, onErr
         while (true) {
             const {done, value} = await reader.read();
             
-            console.log('[STREAMING] Chunk received:', {done, size: value?.length});
-            
             if (done) {
                 console.log('[STREAMING] Stream completed');
                 break;
             }
             
             buffer += decoder.decode(value, {stream: true});
-            console.log('[STREAMING] Buffer size:', buffer.length, 'Preview:', buffer.substring(0, 200));
             
             const lines = buffer.split('\n');
             
@@ -230,10 +231,8 @@ function sendMessageStreamAPI(chatId, content, model, onChunk, onComplete, onErr
                 if (line.startsWith('data: ')) {
                     const jsonStr = line.substring(6);
                     if (jsonStr.trim()) {
-                        console.log('[STREAMING] Parsing line:', jsonStr.substring(0, 100));
                         try {
                             const chunk = JSON.parse(jsonStr);
-                            console.log('[STREAMING] Chunk parsed:', chunk.type, chunk.content?.substring(0, 20));
                             
                             if (chunk.type === 'content') {
                                 onChunk(chunk);
@@ -243,7 +242,7 @@ function sendMessageStreamAPI(chatId, content, model, onChunk, onComplete, onErr
                                 onError(chunk.error || 'Unknown error');
                             }
                         } catch (e) {
-                            console.error('[STREAMING] Failed to parse SSE chunk:', e, jsonStr);
+                            console.error('[STREAMING] Parse error:', e.message);
                         }
                     }
                 }
@@ -251,8 +250,25 @@ function sendMessageStreamAPI(chatId, content, model, onChunk, onComplete, onErr
         }
     }).catch(error => {
         console.error('[STREAMING] Fatal error:', error);
-        onError(error.message);
+        // Check if it's an abort error
+        if (error.name === 'AbortError') {
+            console.log('[STREAMING] Stream cancelled by user');
+            onError('Генерация отменена');
+        } else {
+            // Check for common network errors
+            if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+                onError('Ошибка сети. Проверьте подключение к интернету и убедитесь, что сервер запущен.');
+            } else {
+                onError(error.message);
+            }
+        }
+    }).finally(() => {
+        // Clean up abort controller
+        AppState.currentStreamAbortController = null;
     });
+    
+    // Return abort function for cancellation
+    return () => abortController.abort();
 }
 
 
@@ -306,6 +322,8 @@ const AppState = {
     currentChatId: null,
     chats: [],
     currentModel: 'gpt-4-turbo',
+    currentStreamAbortController: null,
+    isStreaming: false,
     user: {
         balance: 125.50,
         profile: {
@@ -385,10 +403,11 @@ const AppState = {
 };
 
 // Initialize Application
-document.addEventListener('DOMContentLoaded', () => {
-    initializeApp();
+document.addEventListener('DOMContentLoaded', async () => {
+    await initializeApp();
     setupEventListeners();
-    loadSampleChats();
+    // loadUserChats is already called in initializeApp via loadUserData
+    // No need to call loadSampleChats separately
     setupMarkdown();
 });
 
@@ -570,11 +589,7 @@ function setupEventListeners() {
     document.getElementById('modelModalOverlay').addEventListener('click', closeModelModal);
     
     // Profile
-    document.getElementById('profileBtn').addEventListener('click', openProfileModal);
-    document.getElementById('profileModalClose').addEventListener('click', closeProfileModal);
-    document.getElementById('profileModalOverlay').addEventListener('click', closeProfileModal);
-    document.getElementById('profileSaveBtn').addEventListener('click', saveProfile);
-    document.getElementById('profileCancelBtn').addEventListener('click', closeProfileModal);
+    // Note: profileBtn now uses onclick="showProfile()" in HTML
     
     // Message input
     const messageInput = document.getElementById('messageInput');
@@ -959,7 +974,6 @@ async function sendMessage() {
     const container = document.getElementById('messagesContainer');
     const userMessageElement = createMessageElement(userMessage);
     container.appendChild(userMessageElement);
-    userMessageElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
     
     // Create empty assistant message for streaming
     const assistantMessage = {
@@ -968,51 +982,79 @@ async function sendMessage() {
         content: '',
         timestamp: new Date(),
         tokens: { input: 0, output: 0 },
-        cost: 0
+        cost: 0,
+        isStreaming: true
     };
     
     chat.messages.push(assistantMessage);
     const messageElement = createMessageElement(assistantMessage);
+    messageElement.classList.add('streaming');
     container.appendChild(messageElement);
     const bodyElement = messageElement.querySelector('.message-body');
     
+    // Immediate scroll to assistant message without animation
+    const messagesContainer = document.getElementById('messagesContainer');
+    if (messagesContainer) {
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    
     // Send to backend API with streaming
     try {
-        sendMessageStreamAPI(
+        AppState.isStreaming = true;
+        updateSendButton();
+        
+        let chunkCount = 0;
+        let renderScheduled = false;
+        
+        const cancelStream = sendMessageStreamAPI(
             chat.id,
             content,
             AppState.currentModel,
-            // onChunk - update message content as it streams with artificial delay for visual effect
-            (() => {
-                const chunkQueue = [];
+            // onChunk - update message content as it streams
+            (chunk) => {
+                assistantMessage.content += chunk.content;
+                chunkCount++;
                 
-                // Process queue with artificial delay for smooth visual streaming
-                const processQueue = async () => {
-                    while (chunkQueue.length > 0) {
-                        const chunk = chunkQueue.shift();
-                        assistantMessage.content += chunk.content;
-                        
-                        // Render current content
-                        bodyElement.innerHTML = marked.parse(assistantMessage.content);
-                        bodyElement.querySelectorAll('pre code').forEach((block) => {
-                            hljs.highlightElement(block);
-                        });
-                        
-                        // Smooth scroll to bottom
-                        messageElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
-                        
-                        // Artificial delay for visual streaming effect (20ms per chunk)
-                        await new Promise(resolve => setTimeout(resolve, 20));
-                    }
-                };
-                
-                return (chunk) => {
-                    chunkQueue.push(chunk);
-                    processQueue();
-                };
-            })(),
+                // Render on every frame (throttled by requestAnimationFrame)
+                // This ensures smooth updates without height jumps
+                if (!renderScheduled) {
+                    renderScheduled = true;
+                    requestAnimationFrame(() => {
+                        try {
+                            // Always render as markdown to maintain consistent height
+                            bodyElement.innerHTML = marked.parse(assistantMessage.content);
+                            
+                            // Highlight code blocks only once
+                            bodyElement.querySelectorAll('pre code:not([data-highlighted])').forEach((block) => {
+                                hljs.highlightElement(block);
+                                block.dataset.highlighted = 'yes';
+                            });
+                            
+                            // Smooth scroll to keep message in view
+                            const messagesContainer = document.getElementById('messagesContainer');
+                            if (messagesContainer) {
+                                const isNearBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 150;
+                                if (isNearBottom) {
+                                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                                }
+                            }
+                        } catch (e) {
+                            // Keep previous content on error
+                            console.error('[RENDER] Error:', e.message);
+                        }
+                        renderScheduled = false;
+                    });
+                }
+            },
             // onComplete - finalize message
             (endChunk) => {
+                AppState.isStreaming = false;
+                updateSendButton();
+                
+                // Remove streaming class
+                messageElement.classList.remove('streaming');
+                assistantMessage.isStreaming = false;
+                
                 assistantMessage.tokens = endChunk.tokens || { input: 0, output: 0 };
                 assistantMessage.cost = endChunk.cost || 0;
                 chat.updatedAt = new Date();
@@ -1021,6 +1063,22 @@ async function sendMessage() {
                 bodyElement.innerHTML = marked.parse(assistantMessage.content);
                 bodyElement.querySelectorAll('pre code').forEach((block) => {
                     hljs.highlightElement(block);
+                });
+                
+                // Final scroll to bottom without animation
+                const messagesContainer = document.getElementById('messagesContainer');
+                if (messagesContainer) {
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }
+                
+                // Add copy buttons to code blocks
+                bodyElement.querySelectorAll('pre').forEach((pre, index) => {
+                    const copyBtn = document.createElement('button');
+                    copyBtn.className = 'copy-code-btn';
+                    copyBtn.textContent = 'Копировать';
+                    copyBtn.onclick = () => copyCode(pre, copyBtn);
+                    pre.style.position = 'relative';
+                    pre.appendChild(copyBtn);
                 });
                 
                 // Update message with final stats
@@ -1035,7 +1093,8 @@ async function sendMessage() {
                     footer.appendChild(stats);
                 }
                 
-                // Update balance
+                // Update balance (reduce by cost)
+                AppState.user.balance -= assistantMessage.cost;
                 updateBalance();
                 
                 // Auto-generate chat title from first message
@@ -1054,12 +1113,19 @@ async function sendMessage() {
             },
             // onError - handle errors
             (error) => {
+                AppState.isStreaming = false;
+                updateSendButton();
+                
                 // Remove incomplete message
                 chat.messages.pop();
                 messageElement.remove();
                 
                 console.error('Error sending message:', error);
-                if (error.includes('402') || error.includes('Insufficient balance')) {
+                
+                // Check if it was cancelled by user
+                if (error === 'Генерация отменена') {
+                    showNotification('Генерация ответа отменена', 'info');
+                } else if (error.includes('402') || error.includes('Insufficient balance')) {
                     showNotification('Недостаточно средств на балансе', 'error');
                 } else if (error.includes('401') || error.includes('Unauthorized')) {
                     showNotification('Требуется авторизация', 'error');
@@ -1071,6 +1137,9 @@ async function sendMessage() {
         );
         
     } catch (error) {
+        AppState.isStreaming = false;
+        updateSendButton();
+        
         // Remove incomplete message
         chat.messages.pop();
         messageElement.remove();
@@ -1159,7 +1228,32 @@ function updateSendButton() {
     const input = document.getElementById('messageInput');
     const sendBtn = document.getElementById('sendBtn');
     const hasContent = input.value.trim().length > 0 || AppState.attachments.length > 0;
-    sendBtn.disabled = !hasContent;
+    
+    // Disable send button if streaming or no content
+    sendBtn.disabled = AppState.isStreaming || !hasContent;
+    
+    // Update button text based on streaming state
+    const btnIcon = sendBtn.querySelector('.send-icon') || sendBtn;
+    if (AppState.isStreaming) {
+        btnIcon.textContent = '⏹️';
+        sendBtn.title = 'Остановить генерацию';
+        sendBtn.onclick = cancelCurrentStream;
+    } else {
+        btnIcon.textContent = '➤';
+        sendBtn.title = 'Отправить сообщение';
+        sendBtn.onclick = sendMessage;
+    }
+}
+
+// Cancel current streaming
+function cancelCurrentStream() {
+    if (AppState.currentStreamAbortController) {
+        AppState.currentStreamAbortController.abort();
+        AppState.currentStreamAbortController = null;
+        AppState.isStreaming = false;
+        updateSendButton();
+        showNotification('Генерация остановлена', 'info');
+    }
 }
 
 // File Handling
@@ -1623,6 +1717,183 @@ function closeAuthModal() {
     document.getElementById('authModal').style.display = 'none';
 }
 
+async function showProfile() {
+    // Ensure authToken is loaded from localStorage
+    if (!authToken) {
+        authToken = localStorage.getItem('token');
+    }
+    
+    if (!authToken) {
+        showNotification('Войдите, чтобы просмотреть профиль', 'error');
+        return;
+    }
+    
+    try {
+        // Load profile data
+        const response = await fetch(`${API_CONFIG.baseURL}/profile/`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to load profile');
+        }
+        
+        const profile = await response.json();
+        
+        // Display profile in modal
+        displayProfile(profile);
+        document.getElementById('profileModal').style.display = 'flex';
+        
+    } catch (error) {
+        console.error('Error loading profile:', error);
+        showNotification('Ошибка загрузки профиля', 'error');
+    }
+}
+
+function closeProfileModal() {
+    document.getElementById('profileModal').style.display = 'none';
+}
+
+function displayProfile(profile) {
+    // Basic info
+    const user = AppState.user || JSON.parse(localStorage.getItem('currentUser') || '{}');
+    document.getElementById('profileEmail').textContent = user?.email || '-';
+    document.getElementById('profileBalance').textContent = `${user?.balance?.toFixed(2) || '0.00'}₽`;
+    
+    let hasData = false;
+    
+    // Interests
+    if (profile.interests && profile.interests.length > 0) {
+        hasData = true;
+        document.getElementById('profileInterestsSection').style.display = 'block';
+        const interestsEl = document.getElementById('profileInterests');
+        interestsEl.innerHTML = profile.interests.map(interest => 
+            `<span class="profile-tag">${escapeHtml(interest)}</span>`
+        ).join('');
+    } else {
+        document.getElementById('profileInterestsSection').style.display = 'none';
+    }
+    
+    // Values
+    if (profile.values && profile.values.length > 0) {
+        hasData = true;
+        document.getElementById('profileValuesSection').style.display = 'block';
+        const valuesEl = document.getElementById('profileValues');
+        valuesEl.innerHTML = profile.values.map(value => 
+            `<span class="profile-tag">${escapeHtml(value)}</span>`
+        ).join('');
+    } else {
+        document.getElementById('profileValuesSection').style.display = 'none';
+    }
+    
+    // Beliefs
+    if (profile.beliefs && profile.beliefs.length > 0) {
+        hasData = true;
+        document.getElementById('profileBeliefsSection').style.display = 'block';
+        const beliefsEl = document.getElementById('profileBeliefs');
+        beliefsEl.innerHTML = profile.beliefs.map(belief => 
+            `<span class="profile-tag">${escapeHtml(belief)}</span>`
+        ).join('');
+    } else {
+        document.getElementById('profileBeliefsSection').style.display = 'none';
+    }
+    
+    // Skills
+    if (profile.skills && profile.skills.length > 0) {
+        hasData = true;
+        document.getElementById('profileSkillsSection').style.display = 'block';
+        const skillsEl = document.getElementById('profileSkills');
+        skillsEl.innerHTML = profile.skills.map(skill => 
+            `<span class="profile-tag">${escapeHtml(skill)}</span>`
+        ).join('');
+    } else {
+        document.getElementById('profileSkillsSection').style.display = 'none';
+    }
+    
+    // Desires
+    if (profile.desires && profile.desires.length > 0) {
+        hasData = true;
+        document.getElementById('profileDesiresSection').style.display = 'block';
+        const desiresEl = document.getElementById('profileDesires');
+        desiresEl.innerHTML = profile.desires.map(desire => 
+            `<span class="profile-tag">${escapeHtml(desire)}</span>`
+        ).join('');
+    } else {
+        document.getElementById('profileDesiresSection').style.display = 'none';
+    }
+    
+    // Intentions
+    if (profile.intentions && profile.intentions.length > 0) {
+        hasData = true;
+        document.getElementById('profileIntentionsSection').style.display = 'block';
+        const intentionsEl = document.getElementById('profileIntentions');
+        intentionsEl.innerHTML = profile.intentions.map(intention => 
+            `<span class="profile-tag">${escapeHtml(intention)}</span>`
+        ).join('');
+    } else {
+        document.getElementById('profileIntentionsSection').style.display = 'none';
+    }
+    
+    // Likes
+    if (profile.likes && profile.likes.length > 0) {
+        hasData = true;
+        document.getElementById('profileLikesSection').style.display = 'block';
+        const likesEl = document.getElementById('profileLikes');
+        likesEl.innerHTML = profile.likes.map(like => 
+            `<span class="profile-tag">${escapeHtml(like)}</span>`
+        ).join('');
+    } else {
+        document.getElementById('profileLikesSection').style.display = 'none';
+    }
+    
+    // Dislikes
+    if (profile.dislikes && profile.dislikes.length > 0) {
+        hasData = true;
+        document.getElementById('profileDislikesSection').style.display = 'block';
+        const dislikesEl = document.getElementById('profileDislikes');
+        dislikesEl.innerHTML = profile.dislikes.map(dislike => 
+            `<span class="profile-tag">${escapeHtml(dislike)}</span>`
+        ).join('');
+    } else {
+        document.getElementById('profileDislikesSection').style.display = 'none';
+    }
+    
+    // Loves
+    if (profile.loves && profile.loves.length > 0) {
+        hasData = true;
+        document.getElementById('profileLovesSection').style.display = 'block';
+        const lovesEl = document.getElementById('profileLoves');
+        lovesEl.innerHTML = profile.loves.map(love => 
+            `<span class="profile-tag">${escapeHtml(love)}</span>`
+        ).join('');
+    } else {
+        document.getElementById('profileLovesSection').style.display = 'none';
+    }
+    
+    // Hates
+    if (profile.hates && profile.hates.length > 0) {
+        hasData = true;
+        document.getElementById('profileHatesSection').style.display = 'block';
+        const hatesEl = document.getElementById('profileHates');
+        hatesEl.innerHTML = profile.hates.map(hate => 
+            `<span class="profile-tag">${escapeHtml(hate)}</span>`
+        ).join('');
+    } else {
+        document.getElementById('profileHatesSection').style.display = 'none';
+    }
+    
+    // Show empty state if no data
+    document.getElementById('profileEmpty').style.display = hasData ? 'none' : 'block';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 function switchToLogin() {
     document.getElementById('loginForm').style.display = 'block';
     document.getElementById('registerForm').style.display = 'none';
@@ -1720,3 +1991,4 @@ window.showAuthModal = showAuthModal;
 window.closeAuthModal = closeAuthModal;
 window.switchToLogin = switchToLogin;
 window.switchToRegister = switchToRegister;
+window.cancelCurrentStream = cancelCurrentStream;

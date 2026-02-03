@@ -55,7 +55,7 @@
                         <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/>
                     </svg>
                 </button>
-                <button class="icon-btn" id="profileBtn" aria-label="Profile" title="Профиль">
+                <button class="icon-btn" id="profileBtn" aria-label="Profile" title="Профиль" onclick="showProfile()">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                         <circle cx="12" cy="7" r="4"/>
@@ -248,49 +248,6 @@
         </div>
     </div>
 
-    <!-- Profile Modal -->
-    <div class="modal" id="profileModal" style="display: none;">
-        <div class="modal-overlay" id="profileModalOverlay"></div>
-        <div class="modal-content profile-modal-content">
-            <div class="modal-header">
-                <h3>Профиль пользователя</h3>
-                <button class="modal-close" id="profileModalClose">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M18 6L6 18M6 6l12 12" stroke-width="2"/>
-                    </svg>
-                </button>
-            </div>
-            <div class="modal-body">
-                <div class="profile-section">
-                    <h4>📊 Ценности</h4>
-                    <div class="value-sliders" id="valueSliders">
-                        <!-- Value sliders will be inserted here -->
-                    </div>
-                </div>
-                
-                <div class="profile-section">
-                    <h4>🎯 Интересы</h4>
-                    <div class="interests-tags" id="interestsTags">
-                        <!-- Interest tags will be inserted here -->
-                    </div>
-                    <input type="text" class="add-interest-input" placeholder="Добавить интерес..." id="addInterestInput">
-                </div>
-                
-                <div class="profile-section">
-                    <h4>🛠️ Навыки</h4>
-                    <div class="skills-list" id="skillsList">
-                        <!-- Skills will be inserted here -->
-                    </div>
-                    <input type="text" class="add-skill-input" placeholder="Добавить навык..." id="addSkillInput">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="secondary-btn" id="profileCancelBtn">Отмена</button>
-                <button class="primary-btn" id="profileSaveBtn">Сохранить</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Auth Modal -->
     <div class="modal" id="authModal" style="display: none;">
         <div class="modal-overlay" onclick="closeAuthModal()"></div>
@@ -329,7 +286,81 @@
     <input type="file" id="imageInput" accept="image/*" style="display: none;" multiple>
     <input type="file" id="docInput" accept=".pdf,.doc,.docx,.txt,.md" style="display: none;" multiple>
 
+    <!-- Profile Modal -->
+    <div class="modal" id="profileModal" style="display: none;">
+        <div class="modal-overlay" onclick="closeProfileModal()"></div>
+        <div class="modal-content profile-modal-content">
+            <div class="modal-header">
+                <h3>Мой Профиль</h3>
+                <button class="modal-close" onclick="closeProfileModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="profile-section">
+                    <h4>👤 Основная информация</h4>
+                    <p><strong>Email:</strong> <span id="profileEmail">-</span></p>
+                    <p><strong>Баланс:</strong> <span id="profileBalance">-</span></p>
+                </div>
+
+                <div class="profile-section" id="profileInterestsSection" style="display: none;">
+                    <h4>🎯 Интересы</h4>
+                    <div class="profile-tags" id="profileInterests"></div>
+                </div>
+
+                <div class="profile-section" id="profileSkillsSection" style="display: none;">
+                    <h4>🛠️ Навыки</h4>
+                    <div class="profile-tags" id="profileSkills"></div>
+                </div>
+
+                <div class="profile-section" id="profileValuesSection" style="display: none;">
+                    <h4>💎 Ценности</h4>
+                    <div class="profile-tags" id="profileValues"></div>
+                </div>
+
+                <div class="profile-section" id="profileBeliefsSection" style="display: none;">
+                    <h4>🌟 Убеждения</h4>
+                    <div class="profile-tags" id="profileBeliefs"></div>
+                </div>
+
+                <div class="profile-section" id="profileDesiresSection" style="display: none;">
+                    <h4>🎓 Цели</h4>
+                    <div class="profile-tags" id="profileDesires"></div>
+                </div>
+
+                <div class="profile-section" id="profileIntentionsSection" style="display: none;">
+                    <h4>📍 Текущие намерения</h4>
+                    <div class="profile-tags" id="profileIntentions"></div>
+                </div>
+
+                <div class="profile-section" id="profileLikesSection" style="display: none;">
+                    <h4>👍 Нравится</h4>
+                    <div class="profile-tags" id="profileLikes"></div>
+                </div>
+
+                <div class="profile-section" id="profileDislikesSection" style="display: none;">
+                    <h4>👎 Не нравится</h4>
+                    <div class="profile-tags" id="profileDislikes"></div>
+                </div>
+
+                <div class="profile-section" id="profileLovesSection" style="display: none;">
+                    <h4>❤️ Любит</h4>
+                    <div class="profile-tags" id="profileLoves"></div>
+                </div>
+
+                <div class="profile-section" id="profileHatesSection" style="display: none;">
+                    <h4>🚫 Ненавидит</h4>
+                    <div class="profile-tags" id="profileHates"></div>
+                </div>
+
+                <div class="profile-empty" id="profileEmpty">
+                    <p>📝 Ваш профиль пока пуст</p>
+                    <p class="text-muted">Начните общение с AI, и система автоматически соберет информацию о ваших интересах, навыках, ценностях и предпочтениях.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
+    <script src="config.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <script src="js/app.js"></script>

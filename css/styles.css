@@ -98,6 +98,12 @@ body {
     transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
+/* Disable transitions inside streaming messages to prevent jitter */
+.message.streaming *,
+.message.streaming {
+    transition: none !important;
+}
+
 /* Scrollbar Styles */
 ::-webkit-scrollbar {
     width: 8px;
@@ -482,7 +488,7 @@ body {
 
 .feature-card:hover {
     border-color: var(--accent-primary);
-    transform: translateY(-2px);
+    /* Removed transform to prevent layout shifts */
 }
 
 .feature-icon {
@@ -542,7 +548,25 @@ body {
     display: flex;
     gap: 1rem;
     max-width: 800px;
+    width: 100%;
     animation: fadeIn 0.3s ease;
+}
+
+/* Disable ALL animations and transitions for streaming messages */
+.message.streaming {
+    animation: none !important;
+    transition: none !important;
+}
+
+/* Fix message width during streaming to prevent breathing effect */
+.message.streaming .message-content {
+    width: 100%;
+    transition: none !important;
+}
+
+.message.streaming * {
+    transition: none !important;
+    animation: none !important;
 }
 
 @keyframes fadeIn {
@@ -555,6 +579,29 @@ body {
         transform: translateY(0);
     }
 }
+
+/* Streaming indicator animation */
+.message.streaming .message-body {
+    position: relative;
+}
+
+.message.streaming .message-body::after {
+    content: '▋';
+    animation: blink 1s infinite;
+    margin-left: 2px;
+    color: var(--accent-primary);
+}
+
+@keyframes blink {
+    0%, 49% {
+        opacity: 1;
+    }
+    50%, 100% {
+        opacity: 0;
+    }
+}
+
+/* Removed pulse animation to prevent breathing effect */
 
 .message.user {
     margin-left: auto;
@@ -579,6 +626,8 @@ body {
 
 .message-content {
     flex: 1;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .message-header {
@@ -611,6 +660,33 @@ body {
     border-radius: var(--radius-lg);
     padding: 1rem;
     line-height: 1.6;
+    min-height: 3rem;
+    /* Prevent layout shifts during streaming */
+    will-change: contents;
+    width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+}
+
+/* Stabilize streaming message dimensions */
+.message.streaming .message-body {
+    contain: layout style paint;
+    width: 100%;
+    min-height: 3rem;
+    transform: none !important;
+    will-change: auto !important;
+}
+
+/* Prevent paragraph margins from causing height changes during streaming */
+.message.streaming .message-body p {
+    margin: 0;
+    transform: none !important;
+}
+
+/* Add minimal spacing for readability without height jumps */
+.message.streaming .message-body p + p {
+    margin-top: 0.5rem;
 }
 
 .message.user .message-body {
@@ -620,10 +696,15 @@ body {
 
 .message-body p {
     margin-bottom: 0.75rem;
+    margin-top: 0;
 }
 
 .message-body p:last-child {
     margin-bottom: 0;
+}
+
+.message-body p:first-child {
+    margin-top: 0;
 }
 
 .message-body pre {
@@ -861,6 +942,144 @@ body {
 .auth-modal-content {
     max-width: 420px;
     width: 90%;
+}
+
+.profile-modal-content {
+    max-width: 600px;
+    width: 90%;
+}
+
+.profile-section {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.profile-section:last-child {
+    border-bottom: none;
+}
+
+.profile-section h4 {
+    margin: 0 0 1rem 0;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
+.profile-section p {
+    margin: 0.5rem 0;
+    color: var(--text-secondary);
+}
+
+.profile-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.profile-tag {
+    display: inline-block;
+    padding: 0.4rem 0.8rem;
+    background: var(--bg-hover);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    margin-right: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.profile-skills {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.profile-skill {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.profile-skill-name {
+    flex: 0 0 150px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.profile-skill-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-hover);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.profile-skill-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+    transition: width 0.3s ease;
+}
+
+.profile-skill-level {
+    flex: 0 0 60px;
+    text-align: right;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.profile-values {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+}
+
+.profile-value {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.profile-value-name {
+    flex: 0 0 150px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.profile-value-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-hover);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.profile-value-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #10b981, #3b82f6);
+    transition: width 0.3s ease;
+}
+
+.profile-value-score {
+    flex: 0 0 60px;
+    text-align: right;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.profile-empty {
+    text-align: center;
+    padding: 2rem;
+    color: var(--text-secondary);
+}
+
+.profile-empty p {
+    margin: 0.5rem 0;
+}
+
+.text-muted {
+    font-size: 0.9rem;
+    opacity: 0.7;
 }
 
 .auth-form {
@@ -1141,7 +1360,7 @@ body {
 .model-card:hover {
     border-color: var(--accent-primary);
     background-color: var(--bg-hover);
-    transform: translateY(-2px);
+    /* Removed transform to prevent layout shifts */
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
