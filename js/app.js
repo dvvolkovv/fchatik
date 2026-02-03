@@ -33,7 +33,19 @@ async function apiRequest(endpoint, options = {}) {
         
         // Handle 401 Unauthorized
         if (response.status === 401) {
-            logout();
+            // Clear auth tokens but keep chats visible
+            authToken = null;
+            currentUser = null;
+            localStorage.removeItem('token');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('currentUser');
+            
+            // Update UI
+            updateAuthUI();
+            updateBalance();
+            
+            // Show login modal instead of full logout
+            showAuthModal();
             showNotification('Сессия истекла. Войдите снова.', 'error');
             throw new Error('Unauthorized');
         }
