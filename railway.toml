@@ -3,7 +3,7 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "nginx -g 'daemon off;'"
+# Используем ENTRYPOINT и CMD из Dockerfile (docker-entrypoint.sh -> nginx)
 healthcheckPath = "/health"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
