@@ -13,15 +13,15 @@ COPY assets/ /usr/share/nginx/html/assets/
 # Копируем шаблон конфига (не сам config.js!)
 COPY config.template.js /tmp/config.template.js
 
-# Копируем nginx конфиг
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Копируем nginx конфиг шаблон
+COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
 
 # Копируем entrypoint скрипт
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
-# Expose port 80
-EXPOSE 80
+# Expose динамический порт
+EXPOSE ${PORT:-80}
 
 # Используем entrypoint для подстановки переменных
 ENTRYPOINT ["/docker-entrypoint.sh"]
