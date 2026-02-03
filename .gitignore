@@ -9,6 +9,9 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# Generated at runtime
+config.js
+
 # IDE
 .vscode/
 .idea/
