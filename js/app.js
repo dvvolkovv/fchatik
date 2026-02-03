@@ -28,8 +28,11 @@ async function apiRequest(endpoint, options = {}) {
         config.headers['Authorization'] = `Bearer ${authToken}`;
     }
     
+    console.log('[apiRequest]', config.method || 'GET', url, 'hasAuth:', !!authToken);
+    
     try {
         const response = await fetch(url, config);
+        console.log('[apiRequest] Response:', response.status, response.statusText);
         
         // Handle 401 Unauthorized
         if (response.status === 401) {
@@ -704,8 +707,10 @@ async function showChat(chatId) {
     // Always load messages from backend to ensure they are up to date
     if (authToken) {
         try {
+            console.log('[showChat] Loading messages for chat:', chatId);
             addTypingIndicator();
             const chatData = await getChatWithMessages(chatId);
+            console.log('[showChat] Chat data received:', chatData);
             chat.messages = chatData.messages.map(msg => ({
                 role: msg.role,
                 content: msg.content,
@@ -717,12 +722,18 @@ async function showChat(chatId) {
                 },
                 cost: msg.cost
             }));
+            console.log('[showChat] Messages mapped:', chat.messages.length);
             removeTypingIndicator();
         } catch (error) {
             removeTypingIndicator();
-            console.error('Failed to load messages:', error);
-            showNotification('Не удалось загрузить сообщения', 'error');
+            console.error('[showChat] Failed to load messages:', error);
+            console.error('[showChat] Error details:', error.message, error.stack);
+            showNotification(`Не удалось загрузить сообщения: ${error.message}`, 'error');
         }
+    } else {
+        console.log('[showChat] No authToken, skipping message load');
+        // Clear messages if not authenticated
+        chat.messages = [];
     }
     
     // Render messages
