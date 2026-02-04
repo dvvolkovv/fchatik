@@ -602,6 +602,7 @@ function setupEventListeners() {
     
     // Model selection
     document.getElementById('modelSelectBtn').addEventListener('click', openModelModal);
+    document.getElementById('modelSelectBtnMobile').addEventListener('click', openModelModal);
     document.getElementById('modelModalClose').addEventListener('click', closeModelModal);
     document.getElementById('modelModalOverlay').addEventListener('click', closeModelModal);
     
@@ -1473,6 +1474,10 @@ function updateModelDisplay() {
     const model = AppState.models.find(m => m.id === AppState.currentModel);
     if (model) {
         document.getElementById('currentModel').textContent = model.name;
+        // Update mobile button title
+        const mobileBtnTitle = `Текущая модель: ${model.name}`;
+        document.getElementById('modelSelectBtnMobile').setAttribute('title', mobileBtnTitle);
+        document.getElementById('modelSelectBtnMobile').setAttribute('aria-label', mobileBtnTitle);
     }
 }
 

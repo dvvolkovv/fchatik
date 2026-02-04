@@ -212,6 +212,33 @@ body {
     font-size: 1.25rem;
 }
 
+/* Mobile model selector button - hidden by default */
+.model-select-btn-mobile {
+    display: none;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    padding: 0.625rem;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: var(--transition);
+    font-size: 1.25rem;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+}
+
+.model-select-btn-mobile:hover {
+    background-color: var(--bg-hover);
+    border-color: var(--border-hover);
+}
+
+.model-select-btn-mobile svg {
+    margin-left: 2px;
+}
+
 /* Icon Buttons */
 .icon-btn {
     background: none;
@@ -1930,7 +1957,18 @@ body {
     
     /* Header - Even more compact */
     .header-center .model-selector {
-        display: none; /* Hide model selector, show in menu instead */
+        width: 100%;
+        display: flex;
+        justify-content: center;
+    }
+    
+    /* Hide full model selector button, show compact mobile version */
+    .model-select-btn {
+        display: none;
+    }
+    
+    .model-select-btn-mobile {
+        display: flex;
     }
     
     .header-right .balance-display {
