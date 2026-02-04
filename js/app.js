@@ -1473,8 +1473,16 @@ function selectModel(modelId) {
 function updateModelDisplay() {
     const model = AppState.models.find(m => m.id === AppState.currentModel);
     if (model) {
+        // Update desktop button
         document.getElementById('currentModel').textContent = model.name;
-        // Update mobile button title
+        
+        // Update mobile button - show model name
+        const mobileModelName = document.getElementById('currentModelMobile');
+        if (mobileModelName) {
+            mobileModelName.textContent = model.name;
+        }
+        
+        // Update mobile button title and aria-label
         const mobileBtnTitle = `Текущая модель: ${model.name}`;
         document.getElementById('modelSelectBtnMobile').setAttribute('title', mobileBtnTitle);
         document.getElementById('modelSelectBtnMobile').setAttribute('aria-label', mobileBtnTitle);

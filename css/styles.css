@@ -218,16 +218,17 @@ body {
     background-color: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-full);
-    padding: 0.625rem;
+    padding: 0.5rem 1rem;
     align-items: center;
-    gap: 0.25rem;
+    gap: 0.5rem;
     color: var(--text-primary);
     cursor: pointer;
     transition: var(--transition);
-    font-size: 1.25rem;
-    min-width: 44px;
+    font-size: 0.875rem;
+    font-weight: 500;
     min-height: 44px;
     justify-content: center;
+    white-space: nowrap;
 }
 
 .model-select-btn-mobile:hover {
@@ -236,7 +237,14 @@ body {
 }
 
 .model-select-btn-mobile svg {
-    margin-left: 2px;
+    flex-shrink: 0;
+}
+
+.model-name-mobile {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Icon Buttons */
