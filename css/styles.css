@@ -1553,6 +1553,7 @@ body {
 }
 
 /* Responsive Design */
+/* Legacy mobile styles - kept for backward compatibility */
 @media (max-width: 768px) {
     .sidebar {
         position: fixed;
@@ -1568,9 +1569,7 @@ body {
         transform: translateX(0);
     }
     
-    .header-center {
-        display: none;
-    }
+    /* Removed: .header-center { display: none; } - conflicts with mobile model selector */
     
     .app-title {
         font-size: 1rem;
