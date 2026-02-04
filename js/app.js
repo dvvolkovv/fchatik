@@ -468,6 +468,7 @@ async function initializeApp() {
     initializeVoiceRecognition();
     initializeTheme();
     updateSendButton(); // Initialize send button onclick handler
+    initializeMobileHandlers(); // Initialize mobile-specific handlers
 }
 
 // Theme Management
@@ -655,11 +656,30 @@ function setupMarkdown() {
 // Sidebar Functions
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
-    sidebar.classList.toggle('hidden');
     
-    // On mobile, add a class to show sidebar
+    // Check if on mobile
     if (window.innerWidth <= 768) {
-        sidebar.classList.toggle('visible');
+        sidebar.classList.toggle('mobile-open');
+        
+        // Toggle overlay
+        let overlay = document.querySelector('.sidebar-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.className = 'sidebar-overlay';
+            overlay.addEventListener('click', toggleSidebar);
+            document.body.appendChild(overlay);
+        }
+        overlay.classList.toggle('active');
+        
+        // Prevent body scroll when sidebar is open
+        if (sidebar.classList.contains('mobile-open')) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+    } else {
+        // Desktop behavior
+        sidebar.classList.toggle('hidden');
     }
 }
 
@@ -697,6 +717,14 @@ async function showChat(chatId) {
     let chat = AppState.chats.find(c => c.id === chatId);
     
     if (!chat) return;
+    
+    // Close sidebar on mobile when selecting a chat
+    if (window.innerWidth <= 768) {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar.classList.contains('mobile-open')) {
+            toggleSidebar();
+        }
+    }
     
     // Hide welcome screen, show chat
     document.getElementById('welcomeScreen').style.display = 'none';
@@ -2011,6 +2039,80 @@ window.copyMessage = copyMessage;
 window.regenerateMessage = regenerateMessage;
 window.handleLogin = handleLogin;
 window.handleRegister = handleRegister;
+// Mobile-specific handlers
+function initializeMobileHandlers() {
+    // Handle window resize
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            // Close sidebar if switched to desktop view
+            if (window.innerWidth > 768) {
+                const sidebar = document.getElementById('sidebar');
+                sidebar.classList.remove('mobile-open');
+                const overlay = document.querySelector('.sidebar-overlay');
+                if (overlay) {
+                    overlay.classList.remove('active');
+                }
+                document.body.style.overflow = '';
+            }
+        }, 250);
+    });
+    
+    // Handle orientation change
+    window.addEventListener('orientationchange', () => {
+        setTimeout(() => {
+            // Scroll to bottom of chat if in landscape
+            const messagesContainer = document.getElementById('messagesContainer');
+            if (messagesContainer && messagesContainer.scrollHeight > 0) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+        }, 100);
+    });
+    
+    // Prevent zoom on input focus (iOS Safari)
+    const inputs = document.querySelectorAll('input, textarea');
+    inputs.forEach(input => {
+        input.addEventListener('focus', (e) => {
+            if (window.innerWidth < 768) {
+                const viewportMeta = document.querySelector('meta[name="viewport"]');
+                if (viewportMeta) {
+                    viewportMeta.setAttribute('content', 
+                        'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+                }
+            }
+        });
+        
+        input.addEventListener('blur', (e) => {
+            if (window.innerWidth < 768) {
+                const viewportMeta = document.querySelector('meta[name="viewport"]');
+                if (viewportMeta) {
+                    viewportMeta.setAttribute('content', 
+                        'width=device-width, initial-scale=1.0');
+                }
+            }
+        });
+    });
+    
+    // Add touch feedback for buttons
+    const buttons = document.querySelectorAll('button, .chat-item, .model-card');
+    buttons.forEach(button => {
+        button.addEventListener('touchstart', function() {
+            this.style.opacity = '0.7';
+        }, { passive: true });
+        
+        button.addEventListener('touchend', function() {
+            setTimeout(() => {
+                this.style.opacity = '';
+            }, 100);
+        }, { passive: true });
+        
+        button.addEventListener('touchcancel', function() {
+            this.style.opacity = '';
+        }, { passive: true });
+    });
+}
+
 window.showAuthModal = showAuthModal;
 window.closeAuthModal = closeAuthModal;
 window.switchToLogin = switchToLogin;
