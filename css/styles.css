@@ -1740,12 +1740,18 @@ body {
     
     .header-center .model-selector {
         max-width: none;
-        width: 100%;
+        width: auto;
+        display: flex;
+        justify-content: center;
     }
     
+    /* Hide full model selector button on mobile, show compact version */
     .model-select-btn {
-        font-size: 0.813rem;
-        padding: 0.5rem 0.75rem;
+        display: none;
+    }
+    
+    .model-select-btn-mobile {
+        display: flex;
     }
     
     .model-icon {
@@ -1956,21 +1962,6 @@ body {
     }
     
     /* Header - Even more compact */
-    .header-center .model-selector {
-        width: 100%;
-        display: flex;
-        justify-content: center;
-    }
-    
-    /* Hide full model selector button, show compact mobile version */
-    .model-select-btn {
-        display: none;
-    }
-    
-    .model-select-btn-mobile {
-        display: flex;
-    }
-    
     .header-right .balance-display {
         display: none; /* Hide balance, show in profile */
     }
