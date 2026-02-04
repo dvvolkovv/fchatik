@@ -467,6 +467,7 @@ async function initializeApp() {
     updateModelDisplay();
     initializeVoiceRecognition();
     initializeTheme();
+    updateSendButton(); // Initialize send button onclick handler
 }
 
 // Theme Management
@@ -611,8 +612,8 @@ function setupEventListeners() {
     messageInput.addEventListener('input', handleInputChange);
     messageInput.addEventListener('keydown', handleInputKeydown);
     
-    // Send button
-    document.getElementById('sendBtn').addEventListener('click', sendMessage);
+    // Send button - use onclick handler set by updateSendButton()
+    // Don't use addEventListener to avoid conflict with dynamic onclick reassignment
     
     // File attachments
     document.getElementById('attachFileBtn').addEventListener('click', () => document.getElementById('fileInput').click());
