@@ -188,6 +188,17 @@ async function sendMessageAPI(chatId, content, model) {
     });
 }
 
+async function generateImageAPI(prompt, model = 'google/gemini-2.5-flash-image', size = '1024x1024') {
+    return await apiRequest('/llm/generate-image', {
+        method: 'POST',
+        body: JSON.stringify({
+            prompt: prompt,
+            model: model,
+            size: size
+        })
+    });
+}
+
 // Streaming message API using SSE (Server-Sent Events)
 function sendMessageStreamAPI(chatId, content, model, onChunk, onComplete, onError) {
     const url = `${API_CONFIG.baseURL}/llm/chat/${chatId}/message/stream`;
@@ -621,6 +632,7 @@ function setupEventListeners() {
     document.getElementById('attachFileBtn').addEventListener('click', () => document.getElementById('fileInput').click());
     document.getElementById('attachImageBtn').addEventListener('click', () => document.getElementById('imageInput').click());
     document.getElementById('attachDocBtn').addEventListener('click', () => document.getElementById('docInput').click());
+    document.getElementById('generateImageBtn').addEventListener('click', openImageGenerationModal);
     
     document.getElementById('fileInput').addEventListener('change', handleFileSelect);
     document.getElementById('imageInput').addEventListener('change', handleFileSelect);
@@ -891,6 +903,24 @@ function createMessageElement(message) {
         });
     } else {
         body.textContent = message.content;
+    }
+    
+    // Add generated image if present
+    if (message.image_url) {
+        const imageContainer = document.createElement('div');
+        imageContainer.className = 'generated-image-container';
+        imageContainer.style.marginTop = '1rem';
+        
+        const img = document.createElement('img');
+        img.src = message.image_url;
+        img.alt = 'Generated image';
+        img.style.maxWidth = '100%';
+        img.style.borderRadius = '8px';
+        img.style.cursor = 'pointer';
+        img.onclick = () => window.open(message.image_url, '_blank');
+        
+        imageContainer.appendChild(img);
+        body.appendChild(imageContainer);
     }
     
     // Footer with stats
@@ -2126,8 +2156,107 @@ function initializeMobileHandlers() {
     });
 }
 
+// Image Generation Modal
+function openImageGenerationModal() {
+    if (!authToken) {
+        showNotification('Войдите в систему для генерации изображений', 'error');
+        showAuthModal();
+        return;
+    }
+    document.getElementById('imageGenModal').style.display = 'flex';
+    document.getElementById('imagePrompt').focus();
+}
+
+function closeImageGenerationModal() {
+    document.getElementById('imageGenModal').style.display = 'none';
+    document.getElementById('imagePrompt').value = '';
+    document.getElementById('imageGenProgress').style.display = 'none';
+}
+
+async function handleImageGeneration() {
+    const prompt = document.getElementById('imagePrompt').value.trim();
+    const model = document.getElementById('imageModel').value;
+    const size = document.getElementById('imageSize').value;
+    
+    if (!prompt) {
+        showNotification('Введите описание изображения', 'error');
+        return;
+    }
+    
+    // Show progress
+    document.getElementById('imageGenProgress').style.display = 'block';
+    document.getElementById('generateBtn').disabled = true;
+    
+    try {
+        const result = await generateImageAPI(prompt, model, size);
+        
+        // Close modal
+        closeImageGenerationModal();
+        
+        // Get or create current chat
+        let chat = AppState.chats.find(c => c.id === AppState.currentChatId);
+        
+        if (!chat) {
+            // Create new chat
+            const newChat = await createChatAPI(`Изображение: ${prompt.substring(0, 30)}...`);
+            chat = {
+                id: newChat.id,
+                title: newChat.title,
+                messages: [],
+                createdAt: new Date(newChat.created_at),
+                updatedAt: new Date(newChat.updated_at)
+            };
+            AppState.chats.unshift(chat);
+            AppState.currentChatId = chat.id;
+            renderChatList();
+            showChat(chat.id);
+        }
+        
+        // Add user message with prompt
+        const userMessage = {
+            role: 'user',
+            content: `🎨 Сгенерируй изображение: ${prompt}`,
+            timestamp: new Date()
+        };
+        chat.messages.push(userMessage);
+        
+        // Add assistant message with generated image
+        const assistantMessage = {
+            role: 'assistant',
+            content: `Изображение сгенерировано успешно!`,
+            image_url: result.image_url,
+            timestamp: new Date(),
+            cost: result.cost
+        };
+        chat.messages.push(assistantMessage);
+        
+        // Render messages
+        const container = document.getElementById('messagesContainer');
+        container.appendChild(createMessageElement(userMessage));
+        container.appendChild(createMessageElement(assistantMessage));
+        
+        // Scroll to bottom
+        container.scrollTop = container.scrollHeight;
+        
+        // Update balance
+        AppState.user.balance = result.balance;
+        updateBalance();
+        
+        showNotification(`Изображение сгенерировано! Стоимость: ${result.cost.toFixed(2)} ₽`, 'success');
+        
+    } catch (error) {
+        console.error('Image generation error:', error);
+        showNotification('Ошибка генерации: ' + error.message, 'error');
+        document.getElementById('imageGenProgress').style.display = 'none';
+        document.getElementById('generateBtn').disabled = false;
+    }
+}
+
 window.showAuthModal = showAuthModal;
 window.closeAuthModal = closeAuthModal;
 window.switchToLogin = switchToLogin;
 window.switchToRegister = switchToRegister;
 window.cancelCurrentStream = cancelCurrentStream;
+window.openImageGenerationModal = openImageGenerationModal;
+window.closeImageGenerationModal = closeImageGenerationModal;
+window.handleImageGeneration = handleImageGeneration;

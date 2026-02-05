@@ -366,6 +366,52 @@
         </div>
     </div>
 
+    <!-- Image Generation Modal -->
+    <div class="modal" id="imageGenModal" style="display: none;">
+        <div class="modal-overlay" onclick="closeImageGenerationModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🎨 Генерация изображения</h3>
+                <button class="modal-close" onclick="closeImageGenerationModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="imagePrompt">Описание изображения:</label>
+                    <textarea id="imagePrompt" placeholder="Опишите какое изображение вы хотите создать..." rows="4" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-tertiary); color: var(--text-primary); resize: vertical;"></textarea>
+                </div>
+                
+                <div class="form-group">
+                    <label for="imageModel">Модель генерации:</label>
+                    <select id="imageModel" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-tertiary); color: var(--text-primary);">
+                        <option value="google/gemini-2.5-flash-image">Gemini 2.5 Flash Image (быстрая, дешевая)</option>
+                        <option value="openai/gpt-5-image-mini">GPT-5 Image Mini (качество)</option>
+                        <option value="black-forest-labs/flux.2-klein-4b">FLUX.2 Klein 4B (бюджет)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="imageSize">Размер:</label>
+                    <select id="imageSize" style="width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-tertiary); color: var(--text-primary);">
+                        <option value="1024x1024">1024x1024 (квадрат)</option>
+                        <option value="1024x1792">1024x1792 (вертикаль)</option>
+                        <option value="1792x1024">1792x1024 (горизонталь)</option>
+                    </select>
+                </div>
+                
+                <div class="modal-footer">
+                    <button class="secondary-btn" onclick="closeImageGenerationModal()">Отмена</button>
+                    <button class="primary-btn" onclick="handleImageGeneration()" id="generateBtn">
+                        <span>🎨 Сгенерировать</span>
+                    </button>
+                </div>
+                
+                <div id="imageGenProgress" style="display: none; margin-top: 1rem; text-align: center; color: var(--text-secondary);">
+                    <p>⏳ Генерирую изображение...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Scripts -->
     <script src="config.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
